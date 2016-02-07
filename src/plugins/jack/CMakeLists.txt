@@ -1,0 +1,10 @@
+find_package(JACK)
+set_package_properties(JACK PROPERTIES TYPE REQUIRED PURPOSE "Enables JACK plugin")
+
+if (JACK_FOUND)
+   include_directories(${JACK_INCLUDE_DIRS})
+   add_definitions(${JACK_DEFINITIONS})
+   add_library(vcable-jack MODULE jack.c)
+   target_link_libraries(vcable-jack PRIVATE ${JACK_LIBRARIES})
+   add_plugins(vcable-jack)
+endif ()

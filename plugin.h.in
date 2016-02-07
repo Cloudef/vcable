@@ -1,0 +1,33 @@
+#ifndef __vcable_plugin__
+#define __vcable_plugin__
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+#define VCABLE_PLUGIN_VERSION "@GIT_SHA1@"
+
+// Audio data encoded as floating point (1.0f == 0dB), this is the common case, but not limited to.
+// If host && plugin agree on sample_size, they could in theory send over data in different format, in this case the plugin / host should do a cast.
+typedef float vcable_sample;
+
+typedef void (*vcable_write_cb)(size_t port, const vcable_sample *buffer, size_t num_samples, uint32_t sample_rate, void *userdata);
+
+struct vcable_options {
+   void *userdata; // unmodified, given back in write_cb
+   const char *name; // name plugin can use when creating audio client
+   vcable_write_cb write_cb; // plugin input -> host output
+   size_t ports; // number of ports for communication between host <-> plugin (e.g. for mono 1, stereo 2)
+   uint8_t sample_size; // size of sample, usually you set this to sizeof(vcable_sample), plugins are usually expected to fail if the size does not match native one.
+};
+
+struct vcable_plugin {
+   const char *name; // name of plugin
+   const char *description; // short description of plugin
+   const char *version; // plugins should set this to VCABLE_PLUGIN_VERSION constant
+   bool (*open)(const struct vcable_options *options); // open plugin with options, may be called more than once, plugin should reopen itself
+   void (*close)(void); // close plugin
+   void (*write)(size_t port, const vcable_sample *buffer, size_t num_samples, uint32_t sample_rate); // host input -> plugin output
+};
+
+#endif /* __vcable__plugin__ */
