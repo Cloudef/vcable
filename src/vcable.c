@@ -87,7 +87,7 @@ vcable_set_options(struct vcable *vcable, const struct vcable_options *options)
    plugin_open(vcable->active, options);
 }
 
-void
+bool
 vcable_set_plugin(struct vcable *vcable, uint32_t index)
 {
    assert(VCABLE_MAX_PLUGINS > index);
@@ -95,11 +95,16 @@ vcable_set_plugin(struct vcable *vcable, uint32_t index)
    vcable->active = NULL;
 
    if (!index)
-      return;
+      return true;
 
    assert(vcable->options.name && vcable->options.write_cb && "vcable_set_options should be called at least once before vcable_set_plugin");
-   vcable->active = &vcable->plugin[index - 1];
-   plugin_open(vcable->active, &vcable->options);
+
+   if (!plugin_open((vcable->active = &vcable->plugin[index - 1]), &vcable->options)) {
+      vcable->active = NULL;
+      return false;
+   }
+
+   return true;
 }
 
 void
