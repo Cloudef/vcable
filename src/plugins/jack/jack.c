@@ -1,3 +1,4 @@
+#include "samplebuffer.h"
 #include <vcable/plugin.h>
 #include <jack/jack.h>
 #include <stdio.h>
@@ -10,7 +11,7 @@ typedef jack_default_audio_sample_t jack_sample;
 #define MAX_PORTS 256
 
 struct jack {
-   jack_sample *inbuf[MAX_PORTS];
+   struct samplebuffer in[MAX_PORTS];
    jack_client_t *client;
    jack_port_t *input[MAX_PORTS];
    jack_port_t *output[MAX_PORTS];
@@ -22,10 +23,8 @@ static void
 release_buffers(struct jack *jack)
 {
    assert(jack);
-   for (size_t i = 0; i < jack->options.ports; ++i) {
-      free(jack->inbuf[i]);
-      jack->inbuf[i] = NULL;
-   }
+   for (size_t i = 0; i < jack->options.ports; ++i)
+      samplebuffer_release(&jack->in[i]);
 }
 
 static int
@@ -38,10 +37,8 @@ bufsz_cb(jack_nframes_t nframes, void *arg)
    release_buffers(jack);
 
    for (size_t i = 0; i < jack->options.ports; ++i) {
-      if (!(jack->inbuf[i] = calloc(sizeof(jack_sample), jack->max_samples))) {
-         fprintf(stderr, "jack: calloc() failed for plugin <-> host buffer for port index %zu\n", i);
+      if (!samplebuffer(&jack->in[i], jack->max_samples, sizeof(jack_sample)))
          goto fail;
-      }
    }
 
    return 0;
@@ -62,8 +59,7 @@ jack_release(struct jack *jack)
          jack_port_unregister(jack->client, jack->input[i]);
       if (jack->output[i])
          jack_port_unregister(jack->client, jack->output[i]);
-      if (jack->inbuf[i])
-         free(jack->inbuf[i]);
+      samplebuffer_release(&jack->in[i]);
    }
 
    if (jack->client)
@@ -149,11 +145,7 @@ write_cb(size_t port, const vcable_sample *data, size_t num_samples, uint32_t sa
    if (port >= MAX_PORTS || sample_rate != jack_get_sample_rate(jack.client))
       return;
 
-   assert(jack.inbuf[port]);
-   const uint32_t w = (num_samples > jack.max_samples ? jack.max_samples : num_samples);
-   assert(w <= jack.max_samples);
-   memcpy(jack.inbuf[port], data, w * sizeof(jack_sample));
-   memset(jack.inbuf[port] + w, 0, (jack.max_samples - w) * sizeof(jack_sample));
+   samplebuffer_write(&jack.in[port], data, num_samples * sizeof(jack_sample));
 }
 
 static int
@@ -166,11 +158,14 @@ process_cb(jack_nframes_t nframes, void *arg)
    const size_t bufsz = nframes * sizeof(jack_sample);
    for (size_t i = 0; i < jack.options.ports; ++i) {
       const jack_sample *in = jack_port_get_buffer(jack.input[i], nframes);
-      jack_sample *out = jack_port_get_buffer(jack.output[i], nframes);
-      assert(in && out && jack.inbuf[i]);
+      assert(in);
       jack.options.write_cb(i, in, nframes, jack_get_sample_rate(jack.client), jack.options.userdata);
-      memcpy(out, jack.inbuf[i], bufsz);
-      memset(jack.inbuf[i], 0, bufsz);
+
+      if (jack.in[i].off >= bufsz) {
+         jack_sample *out = jack_port_get_buffer(jack.output[i], nframes);
+         assert(out);
+         samplebuffer_read(&jack.in[i], out, bufsz);
+      }
    }
 
    return 0;

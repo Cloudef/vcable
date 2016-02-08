@@ -1,4 +1,5 @@
 #include "vcable.h"
+#include "samplebuffer.h"
 #include <ladspa.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,10 +8,9 @@
 
 #define MAX_PORTS 4
 #define NUM_OUTPUTS (MAX_PORTS / 2)
-#define MAX_SAMPLES 4096 // 4096 should be enough for everyone
 
 struct instance {
-   LADSPA_Data outbuf[NUM_OUTPUTS][MAX_SAMPLES];
+   struct samplebuffer out[NUM_OUTPUTS];
    LADSPA_Data *portbuf[MAX_PORTS];
    struct vcable vcable;
    const LADSPA_Descriptor *desc;
@@ -30,10 +30,7 @@ write_cb(size_t port, const vcable_sample *buffer, size_t num_samples, uint32_t 
    if (port >= NUM_OUTPUTS || instance->sample_rate != (unsigned long)sample_rate)
       return;
 
-   const size_t w = (num_samples > MAX_SAMPLES ? MAX_SAMPLES : num_samples);
-   assert(w <= MAX_SAMPLES);
-   memcpy(instance->outbuf[port], buffer, w * sizeof(LADSPA_Data));
-   memset(instance->outbuf[port] + w, 0, (MAX_SAMPLES - w) * sizeof(LADSPA_Data));
+   samplebuffer_write(&instance->out[port], buffer, num_samples * sizeof(LADSPA_Data));
 }
 
 static void
@@ -42,13 +39,13 @@ process_cb(LADSPA_Handle userdata, unsigned long num_samples)
    struct instance *instance = userdata;
    assert(instance);
 
+   const size_t bufsz = num_samples * sizeof(LADSPA_Data);
    for (size_t i = 0; i < instance->desc->PortCount; ++i) {
       const size_t vport = i / 2;
       if (i % 2) {
          // output
-         const size_t w = (num_samples > MAX_SAMPLES ? MAX_SAMPLES : num_samples);
-         memcpy(instance->portbuf[i], instance->outbuf[vport], w * sizeof(LADSPA_Data));
-         memset(instance->outbuf[vport], 0, w * sizeof(LADSPA_Data));
+         if (instance->out[vport].off >= bufsz)
+            samplebuffer_read(&instance->out[vport], instance->portbuf[i], bufsz);
       } else {
          // input
          vcable_write(&instance->vcable, vport, instance->portbuf[i], num_samples, instance->sample_rate);
@@ -76,6 +73,9 @@ instance_release(struct instance *instance)
    if (!instance)
       return;
 
+   for (size_t i = 0; i < NUM_OUTPUTS; ++i)
+      samplebuffer_release(&instance->out[i]);
+
    vcable_release(&instance->vcable);
    free(instance);
 }
@@ -86,6 +86,11 @@ instance_cb(const LADSPA_Descriptor *desc, unsigned long sample_rate)
    struct instance *instance;
    if (!(instance = calloc(1, sizeof(*instance))))
       return NULL;
+
+   for (size_t i = 0; i < desc->PortCount / 2; ++i) {
+      if (!samplebuffer(&instance->out[i], 4096, sizeof(LADSPA_Data)))
+         goto fail;
+   }
 
    instance->desc = desc;
    instance->sample_rate = sample_rate;
