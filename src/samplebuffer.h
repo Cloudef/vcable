@@ -56,8 +56,6 @@ samplebuffer_release(struct samplebuffer *buf)
    if (!buf)
       return;
 
-   if (buf->buffer)
-      free(buf->buffer);
-
+   free(buf->buffer);
    *buf = (struct samplebuffer){0};
 }
