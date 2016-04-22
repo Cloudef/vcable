@@ -6,6 +6,7 @@
 #include <dlfcn.h>
 #include <dirent.h>
 #include <assert.h>
+#include <err.h>
 
 static void
 plugin_close(struct vcable_plugin *plugin)
@@ -24,7 +25,7 @@ plugin_open(struct vcable_plugin *plugin, const struct vcable_options *options)
       return false;
 
    if (!plugin->open(options)) {
-      fprintf(stderr, "vcable: failed to open plugin %s\n", plugin->name);
+      warnx("failed to open plugin %s", plugin->name);
       return false;
    }
 
@@ -39,7 +40,7 @@ plugin_add(struct vcable *vcable, const char *path)
    size_t index = 0;
    for (index = 0; index < VCABLE_MAX_PLUGINS && vcable->handle[index]; ++index);
    if (VCABLE_MAX_PLUGINS <= index) {
-      fprintf(stderr, "vcable: maximum amount (%u) of plugins reached, will skip %s\n", VCABLE_MAX_PLUGINS, path);
+      warnx("maximum amount (%u) of plugins reached, will skip %s", VCABLE_MAX_PLUGINS, path);
       return;
    }
 
@@ -48,13 +49,13 @@ plugin_add(struct vcable *vcable, const char *path)
    // Requires _GNU_SOURCE though.
    void *handle;
    if (!(handle = dlmopen(LM_ID_NEWLM, path, RTLD_NOW | RTLD_LOCAL))) {
-      fprintf(stderr, "vcable: dlopen() failed for %s\n", path);
+      warn("dlopen(%s)", path);
       return;
    }
 
    void (*plugin_register)(struct vcable_plugin *out_plugin);
    if (!(plugin_register = dlsym(handle, "plugin_register"))) {
-      fprintf(stderr, "vcable: dlsym() failed for 'plugin_register' symbol for %s\n", path);
+      warn("dlsym(%s, plugin_register)", path);
       goto error0;
    }
 
@@ -62,18 +63,18 @@ plugin_add(struct vcable *vcable, const char *path)
    plugin_register(&plugin);
 
    if (!plugin.version || strcmp(plugin.version, VCABLE_PLUGIN_VERSION)) {
-      fprintf(stderr, "vcable: version mismatch for plugin %s (%s plugin, %s current)\n", plugin.name, (plugin.version ? plugin.version : ""), VCABLE_PLUGIN_VERSION);
+      warnx("version mismatch for plugin %s (%s plugin, %s current)", plugin.name, (plugin.version ? plugin.version : ""), VCABLE_PLUGIN_VERSION);
       goto error0;
    }
 
    if (!plugin.open || !plugin.close) {
-      fprintf(stderr, "vcable: plugin %s does not implement required open() and close() functions, plugin will not be loaded\n", plugin.name);
+      warnx("plugin %s does not implement required open() and close() functions, plugin will not be loaded", plugin.name);
       goto error0;
    }
 
    vcable->handle[index] = handle;
    vcable->plugin[index] = plugin;
-   fprintf(stderr, "vcable: registered plugin %s (%s) %s\n", plugin.name, plugin.version, plugin.description);
+   warnx("registered plugin %s (%s) %s", plugin.name, plugin.version, plugin.description);
    return;
 
 error0:
@@ -97,7 +98,10 @@ vcable_set_plugin(struct vcable *vcable, uint32_t index)
    if (!index)
       return true;
 
-   assert(vcable->options.name && vcable->options.write_cb && "vcable_set_options should be called at least once before vcable_set_plugin");
+   if (!vcable->options.name || !vcable->options.write_cb) {
+      errx(EXIT_FAILURE, "vcable_set_options should be called at least once before vcable_set_plugin");
+      return false;
+   }
 
    if (!plugin_open((vcable->active = &vcable->plugin[index - 1]), &vcable->options)) {
       vcable->active = NULL;
@@ -147,7 +151,7 @@ vcable_init(struct vcable *vcable)
 
       DIR *d;
       if (!(d = opendir(paths[i]))) {
-         fprintf(stderr, "vcable: could not open plugins directory %s\n", paths[i]);
+         warnx("could not open plugins directory: %s", paths[i]);
          continue;
       }
 

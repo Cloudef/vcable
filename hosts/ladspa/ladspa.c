@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <err.h>
 
 #define MAX_PORTS 4
 #define NUM_OUTPUTS (MAX_PORTS / 2)
@@ -60,7 +61,7 @@ connect_cb(LADSPA_Handle userdata, unsigned long port, LADSPA_Data *buffer)
    assert(instance);
 
    if (port >= instance->desc->PortCount) {
-      fprintf(stderr, "ladspa: connect() tried to connect to unknown port (%lu tried, %zu available)\n", port, instance->desc->PortCount);
+      warnx("ladspa: connect() tried to connect to unknown port (%lu tried, %zu available)", port, instance->desc->PortCount);
       return;
    }
 

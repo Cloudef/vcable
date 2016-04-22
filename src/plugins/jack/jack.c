@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <err.h>
 
 typedef jack_default_audio_sample_t jack_sample;
 
@@ -76,37 +77,37 @@ jack_init(struct jack *jack, int (*process_cb)(jack_nframes_t, void*), const str
    jack->options = *options;
 
    if (sizeof(jack_sample) != options->sample_size) {
-      fprintf(stderr, "jack: sizeof(jack_sample) != sample_size can't proceed. (%u != %u)\n", (uint8_t)sizeof(jack_sample), options->sample_size);
+      warnx("jack: sizeof(jack_sample) != sample_size can't proceed. (%u != %u)", (uint8_t)sizeof(jack_sample), options->sample_size);
       goto fail;
    }
 
    if (options->ports > MAX_PORTS) {
-      fprintf(stderr, "jack: requested too many ports (%zu requested, %u maximum)\n", options->ports, MAX_PORTS);
+      warnx("jack: requested too many ports (%zu requested, %u maximum)", options->ports, MAX_PORTS);
       goto fail;
    }
 
    if (!(jack->client = jack_client_open(options->name, JackNoStartServer, NULL))) {
-      fprintf(stderr, "jack: jack_client_open() failed\n");
+      warnx("jack: jack_client_open() failed");
       goto fail;
    }
 
    if (jack_set_process_callback(jack->client, process_cb, jack) != 0) {
-      fprintf(stderr, "jack: jack_set_process_callback() failed\n");
+      warnx("jack: jack_set_process_callback() failed");
       goto fail;
    }
 
    if (jack_set_buffer_size_callback(jack->client, bufsz_cb, jack) != 0) {
-      fprintf(stderr, "jack: jack_set_buffer_size_callback() failed\n");
+      warnx("jack: jack_set_buffer_size_callback() failed");
       goto fail;
    }
 
    if (!(jack->max_samples = jack_get_buffer_size(jack->client))) {
-      fprintf(stderr, "jack: jack_get_buffer_size() returned <= 0 value %zu\n", jack->max_samples);
+      warnx("jack: jack_get_buffer_size() returned <= 0 value %zu", jack->max_samples);
       goto fail;
    }
 
    if (jack_activate(jack->client) != 0) {
-      fprintf(stderr, "jack: jack_activate() failed\n");
+      warnx("jack: jack_activate() failed");
       goto fail;
    }
 
@@ -114,13 +115,13 @@ jack_init(struct jack *jack, int (*process_cb)(jack_nframes_t, void*), const str
       char name[256];
       snprintf(name, sizeof(name), "input%zu", i);
       if (!(jack->input[i] = jack_port_register(jack->client, name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0))) {
-         fprintf(stderr, "jack: jack_port_register() failed for input port %s\n", name);
+         warnx("jack: jack_port_register() failed for input port %s", name);
          goto fail;
       }
 
       snprintf(name, sizeof(name), "output%zu", i);
       if (!(jack->output[i] = jack_port_register(jack->client, name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0))) {
-         fprintf(stderr, "jack: jack_port_register() failed for output port %s\n", name);
+         warnx("jack: jack_port_register() failed for output port %s", name);
          goto fail;
       }
 
